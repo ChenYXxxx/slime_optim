@@ -12,6 +12,7 @@ TOKENIZER = None
 PROCESSOR = None
 MASK_GENERATOR = None
 SAMPLE_PRINTED = False
+TRUNCATION_WARNING_PRINTED = False
 
 
 def generate_rollout(args, rollout_id, data_buffer, evaluation=False):
@@ -29,7 +30,7 @@ def generate_rollout(args, rollout_id, data_buffer, evaluation=False):
     assert not evaluation
     assert args.rollout_global_dataset
 
-    global TOKENIZER, PROCESSOR, MASK_GENERATOR, SAMPLE_PRINTED
+    global TOKENIZER, PROCESSOR, MASK_GENERATOR, SAMPLE_PRINTED, TRUNCATION_WARNING_PRINTED
     if TOKENIZER is None:
         TOKENIZER = load_tokenizer(args.hf_checkpoint, trust_remote_code=True)
 
@@ -39,6 +40,8 @@ def generate_rollout(args, rollout_id, data_buffer, evaluation=False):
     if MASK_GENERATOR is None:
         MASK_GENERATOR = MultiTurnLossMaskGenerator(TOKENIZER, tokenizer_type=args.loss_mask_type)
 
+    max_context_len = getattr(args, "rollout_max_context_len", None)
+
     samples = data_buffer.get_samples(args.rollout_batch_size)
 
     for i, sample in enumerate(samples):
@@ -47,6 +50,16 @@ def generate_rollout(args, rollout_id, data_buffer, evaluation=False):
         tools = sample.metadata.get("tools", None)
 
         token_ids, loss_mask = MASK_GENERATOR.get_loss_mask(messages, tools=tools)
+         # Truncate if exceeds max_context_len
+        if max_context_len is not None and len(token_ids) > max_context_len:
+            if not TRUNCATION_WARNING_PRINTED:
+                logger.warning(
+                    f"sft_rollout: Truncating sample from {len(token_ids)} to {max_context_len} tokens. "
+                    f"This warning will only be printed once."
+                )
+                TRUNCATION_WARNING_PRINTED = True
+            token_ids = token_ids[:max_context_len]
+            loss_mask = loss_mask[:max_context_len]
         if len(token_ids) != len(loss_mask):
             raise ValueError(
                 f"SFT rollout produced mismatched token_ids/loss_mask lengths: {len(token_ids)=}, {len(loss_mask)=}"
