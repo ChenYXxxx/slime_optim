@@ -67,10 +67,19 @@ def generate_rollout(args, rollout_id, data_buffer, evaluation=False):
 
         response_length = MASK_GENERATOR.get_response_lengths([loss_mask])[0]
 
+        # After truncation, response may be completely cut off (response_length=0).
+        # Assign at least 1 so the sample is still valid; loss_mask will be all-zero
+        # meaning no gradient contribution from this sample.
+        if response_length == 0:
+            response_length = 1
+            loss_mask_tail = [0]
+        else:
+            loss_mask_tail = loss_mask[-response_length:]
+
         sample.tokens = token_ids
         sample.response_length = response_length
         sample.reward = 0
-        sample.loss_mask = loss_mask[-response_length:]
+        sample.loss_mask = loss_mask_tail
 
         if i == 0 and not SAMPLE_PRINTED:
             logger.info(
