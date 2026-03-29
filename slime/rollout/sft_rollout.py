@@ -82,9 +82,36 @@ def generate_rollout(args, rollout_id, data_buffer, evaluation=False):
         sample.loss_mask = loss_mask_tail
 
         if i == 0 and not SAMPLE_PRINTED:
-            logger.info(
-                f"sft_rollout::generate_rollout example data: {sample=} (raw){messages=} (raw){token_ids=} (raw){loss_mask=} {response_length=}"
-            )
+            # Log token-level loss mask visualization for the first sample
+            logger.info("=" * 80)
+            logger.info("sft_rollout: FIRST SAMPLE LOSS MASK VISUALIZATION")
+            logger.info(f"  total tokens: {len(token_ids)}, response_length: {response_length}")
+            logger.info(f"  tokens with loss=1: {sum(loss_mask)}, tokens with loss=0: {len(loss_mask) - sum(loss_mask)}")
+            logger.info("-" * 80)
+
+            # Show tokens colored by loss mask: [LOSS] for mask=1, [SKIP] for mask=0
+            # Group consecutive tokens with the same mask value for readability
+            current_mask = loss_mask[0]
+            current_tokens = [token_ids[0]]
+            for idx in range(1, len(token_ids)):
+                if loss_mask[idx] == current_mask:
+                    current_tokens.append(token_ids[idx])
+                else:
+                    tag = "LOSS" if current_mask == 1 else "SKIP"
+                    decoded = TOKENIZER.decode(current_tokens, skip_special_tokens=False)
+                    # Truncate very long segments for readability
+                    if len(decoded) > 500:
+                        decoded = decoded[:250] + " ... " + decoded[-250:]
+                    logger.info(f"  [{tag}] ({len(current_tokens)} tokens): {repr(decoded)}")
+                    current_mask = loss_mask[idx]
+                    current_tokens = [token_ids[idx]]
+            # Last segment
+            tag = "LOSS" if current_mask == 1 else "SKIP"
+            decoded = TOKENIZER.decode(current_tokens, skip_special_tokens=False)
+            if len(decoded) > 500:
+                decoded = decoded[:250] + " ... " + decoded[-250:]
+            logger.info(f"  [{tag}] ({len(current_tokens)} tokens): {repr(decoded)}")
+            logger.info("=" * 80)
             SAMPLE_PRINTED = True
 
     return samples
